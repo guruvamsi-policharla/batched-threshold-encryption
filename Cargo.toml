@@ -1,0 +1,18 @@
+[package]
+name = "batch-threshold"
+version = "0.1.0"
+edition = "2021"
+authors = ["Guru-Vamsi Policharla"]
+
+[dependencies]
+ark-poly = {version = "0.4.0", default-features = false}
+ark-ff = {version = "0.4.0", default-features = false}
+ark-ec = {version = "0.4.0", default-features = false}
+ark-std = {version = "0.4.0", default-features = false}
+ark-bls12-377 = {version = "0.4.0", default-features = false, features = ["curve"] }
+
+[features]
+asm = [ "ark-ff/asm" ]
+
+[profile.dev]
+opt-level = 3
