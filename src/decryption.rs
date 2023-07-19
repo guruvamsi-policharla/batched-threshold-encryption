@@ -62,11 +62,12 @@ pub fn public_reconstruction<E: Pairing>(
     let fofgamma = share_domain.ifft(&partial_decryptions)[0];
 
     // compute fevals by hashing gs of the ciphertexts to get fevals
-    let mut fevals = vec![E::ScalarField::zero(); batch_size];
+    let mut fevals = vec![E::ScalarField::zero(); batch_size+1];
     for i in 0..batch_size {
         let tg_bytes = hash_to_bytes(ct[i].gs);
         fevals[i] = E::ScalarField::from_random_bytes(&tg_bytes).unwrap();
     }
+    fevals[batch_size] = fofgamma;
 
     // fevals are on an 'almost' nice domain. so we first interpolate quotient polynomial
     // where the evaluations are determined as q(x) = (f(x) - f(gamma))/(x-gamma)
@@ -81,8 +82,8 @@ pub fn public_reconstruction<E: Pairing>(
         qevals[i] = (fevals[i] - fofgamma) * den[i];
     }
 
-    let q = tx_domain.ifft(&qevals[0..batch_size]);
-
+    let q = tx_domain.ifft(&qevals);
+    // TODO: FIX BELOW THIS 
     let mut f = q.clone();
     for i in 1..batch_size {
         f[i] -= gamma*q[i-1];

@@ -14,7 +14,8 @@ pub struct CRS<E: Pairing> {
 pub struct Dealer<E: Pairing> {
     batch_size: usize,
     n: usize,
-    long_term_secret: E::ScalarField, // L_0(1)
+    pub long_term_secret: E::ScalarField, // L_0(1)
+    pub tau: E::ScalarField,
     _engine: PhantomData<E>,
 }
 
@@ -27,6 +28,7 @@ where
             batch_size,
             n,
             long_term_secret: E::ScalarField::zero(),
+            tau: E::ScalarField::zero(),
             _engine: PhantomData,
         }
     }
@@ -34,6 +36,7 @@ where
     pub fn setup<R: RngCore>(&mut self, rng: &mut R) -> (CRS<E>, Vec<Vec<E::ScalarField>>) {
         // Sample tau and compute its powers ==========================================================
         let tau = E::ScalarField::rand(rng);
+        self.tau = tau;
         let powers_of_tau: Vec<E::ScalarField> =
             iter::successors(Some(E::ScalarField::one()), |p| Some(*p * tau))
                 .take(self.batch_size + 1)
@@ -81,13 +84,8 @@ where
             self.batch_size
         );
 
-        let omega = tx_domain.group_gen;
-        let mut lag_domain: Vec<E::ScalarField> = vec![E::ScalarField::one(); self.batch_size + 1];
-
-        lag_domain[0] = E::ScalarField::one();
-        for i in 1..self.batch_size + 1 {
-            lag_domain[i] = lag_domain[i - 1] * omega;
-        }
+        let mut lag_domain: Vec<E::ScalarField> = tx_domain.elements().collect();
+        lag_domain.resize(self.batch_size + 1, E::ScalarField::zero());
         lag_domain[self.batch_size] = tau; //lag_domain now contains {1, omega, omega^2, ... omega^{batch_size-1}, tau}
 
         // compute lagrange coefficients at these points for evaluation at gamma
@@ -108,13 +106,13 @@ where
             lag_coeffs[i] = num / den;
         }
 
-        // save the long_term_secret L_0(gamma)
-        self.long_term_secret = lag_coeffs[0];
+        // save the long_term_secret L_B(gamma)
+        self.long_term_secret = lag_coeffs[self.batch_size];
 
         // secret share the lagrange coefficients
         let mut lag_shares: Vec<Vec<E::ScalarField>> = Vec::new();
         let share_domain = Radix2EvaluationDomain::<E::ScalarField>::new(self.n).unwrap();
-        for i in 1..=self.batch_size {
+        for i in 0..self.batch_size {
             // secret share i-th coefficient
             let mut coeffs = vec![E::ScalarField::zero(); self.n];
             coeffs[0] = powers_of_tau[i];
