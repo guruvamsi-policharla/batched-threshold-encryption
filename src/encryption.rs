@@ -4,7 +4,7 @@ use ark_serialize::*;
 use ark_std::{end_timer, rand::RngCore, start_timer, UniformRand};
 use merlin::Transcript;
 
-use crate::utils::hash_to_bytes;
+use crate::utils::{hash_to_bytes, xor};
 
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct DLogProof<E: Pairing> {
@@ -15,7 +15,7 @@ pub struct DLogProof<E: Pairing> {
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct Ciphertext<E: Pairing> {
     pub ct1: [u8; 32],
-    pub ct2: E::G1,
+    pub ct2: E::G2,
     pub gs: E::G1,
     pub x: E::ScalarField,
     pub pi: DLogProof<E>,
@@ -59,7 +59,7 @@ pub fn encrypt<E: Pairing, R: RngCore>(
     msg: [u8; 32],
     x: E::ScalarField,
     com: E::G1,
-    pk: E::G1,
+    pk: E::G2,
     rng: &mut R,
 ) -> Ciphertext<E> {
     let enc_timer = start_timer!(|| "Encrypting");
@@ -79,12 +79,9 @@ pub fn encrypt<E: Pairing, R: RngCore>(
     let hmask = hash_to_bytes(mask);
 
     // xor msg and hmask
-    let mut ct1 = [0u8; 32];
-    for i in 0..32 {
-        ct1[i] = msg[i] ^ hmask[i];
-    }
+    let ct1: [u8; 32] = xor(&msg, &hmask).as_slice().try_into().unwrap();
 
-    let ct2 = (pk - g * x) * rho;
+    let ct2 = (pk - h * x) * rho;
 
     // Prove knowledge of discrete log of S with ct1, ct2, S, x as tags
     let mut ts: Transcript = Transcript::new(&[0u8]);
@@ -142,20 +139,22 @@ mod tests {
 
     type Fr = <Bls12<ark_bls12_381::Config> as Pairing>::ScalarField;
     type G1 = <Bls12<ark_bls12_381::Config> as Pairing>::G1;
+    type G2 = <Bls12<ark_bls12_381::Config> as Pairing>::G2;
 
     #[test]
     fn test_encryption() {
         let mut rng = ark_std::test_rng();
         let g = G1::generator();
+        let h = G2::generator();
 
-        let batch_size = (1 << 5) - 1;
-        let tx_domain = Radix2EvaluationDomain::<Fr>::new(batch_size + 1).unwrap();
+        let batch_size = 1 << 5;
+        let tx_domain = Radix2EvaluationDomain::<Fr>::new(batch_size).unwrap();
 
         let alpha = Fr::rand(&mut rng);
         let com = g * alpha;
 
         let tau = Fr::rand(&mut rng);
-        let pk = g * tau;
+        let pk = h * tau;
 
         let msg = [1u8; 32];
         let x = tx_domain.group_gen;
