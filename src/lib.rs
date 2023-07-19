@@ -1,3 +1,4 @@
 pub mod dealer;
-pub mod utils;
+pub mod decryption;
 pub mod encryption;
+pub mod utils;
