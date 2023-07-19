@@ -63,7 +63,6 @@ pub fn public_reconstruction<E: Pairing>(
 
     // fevals are on an 'almost' nice domain. so we first interpolate on batch_size points to get q(x) = (f(x) - f(gamma))/(x-gamma)
     // we are not interested in the constant term so fi = qi - gamma.q_{i-1} for i in [1..batch_size].
-
     let mut qevals = vec![E::ScalarField::zero(); batch_size];
     qevals[0] = fof1;
 
@@ -88,7 +87,7 @@ pub fn public_reconstruction<E: Pairing>(
 
     // get all the roots of top_domain
     let omega = top_domain.group_gen;
-    let mut top_domain_roots: Vec<E::ScalarField> = vec![E::ScalarField::one(); 2*batch_size];
+    let mut top_domain_roots: Vec<E::ScalarField> = top_domain.elements().collect();
 
     top_domain_roots[0] = E::ScalarField::one();
     for i in 1..2*batch_size {
@@ -107,7 +106,7 @@ pub fn public_reconstruction<E: Pairing>(
 
     // fft on h to get KZG proofs
     let pi = tx_domain.fft(&h);
-
+    
     // now decrypt each of the ciphertexts as m = ct1 \xor H(e(pi, ct2))
     let mut m = vec![[0u8;32]; batch_size];
     for i in 0..batch_size {
@@ -118,5 +117,3 @@ pub fn public_reconstruction<E: Pairing>(
 
     m
 }
-
-// pub fn batch_open()

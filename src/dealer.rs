@@ -7,7 +7,7 @@ use std::{iter, marker::PhantomData, vec};
 
 pub struct CRS<E: Pairing> {
     pub powers_of_g: Vec<E::G1>,
-    pub h: E::G2,
+    pub pk: E::G2,
 
     pub powers_of_top_tau: Vec<E::G1>,
 }
@@ -129,7 +129,7 @@ where
 
         let crs = CRS::<E> {
             powers_of_g,
-            h,
+            pk: h*tau,
             powers_of_top_tau,
         };
 
@@ -170,7 +170,6 @@ mod tests {
 
         let mut dealer = Dealer::<Bls12_381>::new(batch_size, n);
         let (crs, lag_shares) = dealer.setup(&mut rng);
-        let dealer = dealer;
 
         let (_com, evals) = dealer.epoch_setup(&mut rng);
 

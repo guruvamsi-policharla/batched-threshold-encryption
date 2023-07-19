@@ -3,8 +3,10 @@ use ark_ff::Field;
 use ark_serialize::*;
 use ark_std::{end_timer, rand::RngCore, start_timer, UniformRand};
 use merlin::Transcript;
+use retry::{retry, delay::Fixed};
 
 use crate::utils::{hash_to_bytes, xor};
+
 
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct DLogProof<E: Pairing> {
@@ -69,10 +71,26 @@ pub fn encrypt<E: Pairing, R: RngCore>(
     let rho = E::ScalarField::rand(rng);
 
     // hash element S to curve to get tg
-    let s = E::ScalarField::rand(rng);
-    let gs = g * s;
-    let hgs = hash_to_bytes(gs);
-    let tg = E::ScalarField::from_random_bytes(&hgs).unwrap();
+    // retry if bytes cannot be converted to a field element
+    let result = retry(Fixed::from_millis(100), || {
+        let s = E::ScalarField::rand(rng);
+        let gs = g * s;
+        let hgs = hash_to_bytes(gs);
+        let tg_option = E::ScalarField::from_random_bytes(&hgs);
+        
+        match tg_option {
+            Some(tg) => Ok((s, gs, tg)),
+            None => {
+                #[cfg(debug_assertions)] {
+                    dbg!("Failed to hash to field element, retrying...");
+                }
+                Err(())
+            },
+
+        }
+    });
+
+    let (s, gs, tg) = result.unwrap();
 
     // compute mask
     let mask = E::pairing(com - (g * tg), h) * rho; //e(com/g^tg, h)^rho
