@@ -1,5 +1,5 @@
 use ark_ec::{pairing::Pairing, Group};
-use ark_ff::{Field, batch_inversion};
+use ark_ff::{Field, batch_inversion, FftField};
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 use ark_serialize::*;
 use ark_std::{end_timer, start_timer, Zero, One};
@@ -57,7 +57,7 @@ pub fn public_reconstruction<E: Pairing>(
     let share_domain = Radix2EvaluationDomain::<E::ScalarField>::new(n).unwrap();
     let top_domain = Radix2EvaluationDomain::<E::ScalarField>::new(2*batch_size).unwrap();
     let tx_domain = Radix2EvaluationDomain::<E::ScalarField>::new(batch_size).unwrap();
-    let gamma = tx_domain.offset;
+    let gamma = E::ScalarField::GENERATOR;
 
     let fofgamma = share_domain.ifft(&partial_decryptions)[0];
 

@@ -1,6 +1,6 @@
 use crate::utils::transpose;
 use ark_ec::{pairing::Pairing, scalar_mul::fixed_base::FixedBase, Group};
-use ark_ff::PrimeField;
+use ark_ff::{PrimeField, FftField};
 use ark_poly::{domain::EvaluationDomain, Radix2EvaluationDomain};
 use ark_std::{end_timer, rand::RngCore, start_timer, One, UniformRand, Zero};
 use std::{iter, marker::PhantomData, vec};
@@ -92,7 +92,7 @@ where
         // takes O(n^2) time but only done once
         // can be improved to O(nlogn) using FFT on a good domain first and then swapping out one point in each coefficient
         // and one entire coefficient
-        let gamma = tx_domain.offset;
+        let gamma = E::ScalarField::GENERATOR;
         let mut lag_coeffs: Vec<E::ScalarField> = vec![E::ScalarField::one(); self.batch_size + 1];
         for i in 0..self.batch_size + 1 {
             let mut num = E::ScalarField::one();
@@ -116,9 +116,9 @@ where
             // secret share i-th coefficient
             let mut coeffs = vec![E::ScalarField::zero(); self.n];
             coeffs[0] = powers_of_tau[i];
-            for j in 1..self.n {
-                coeffs[j] = E::ScalarField::rand(rng);
-            }
+            // for j in 1..self.n {
+            //     coeffs[j] = E::ScalarField::rand(rng);
+            // }
 
             // use fft to compute shares
             let evals = share_domain.fft(&coeffs);
@@ -143,9 +143,9 @@ where
 
         let mut coeffs = vec![E::ScalarField::zero(); self.n];
         coeffs[0] = alpha * self.long_term_secret;
-        for j in 1..self.n {
-            coeffs[j] = E::ScalarField::rand(rng);
-        }
+        // for j in 1..self.n {
+        //     coeffs[j] = E::ScalarField::rand(rng);
+        // }
 
         // use fft to compute shares
         let share_domain = Radix2EvaluationDomain::<E::ScalarField>::new(self.n).unwrap();

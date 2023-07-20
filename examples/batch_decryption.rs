@@ -1,11 +1,10 @@
-use std::ops::{Sub, Div};
-
+use std::ops::Div;
 use ark_bls12_381::Bls12_381;
 use ark_ec::{pairing::Pairing, bls12::Bls12, VariableBaseMSM, CurveGroup, Group};
 use ark_poly::{Radix2EvaluationDomain, EvaluationDomain, DenseUVPolynomial, univariate::DensePolynomial, Polynomial};
-use batch_threshold::{dealer::{Dealer, CRS}, encryption::{encrypt, Ciphertext}, decryption::{SecretKey, public_reconstruction}, utils::{hash_to_bytes, xor}};
+use batch_threshold::{dealer::{Dealer, CRS}, encryption::{encrypt, Ciphertext}, decryption::{SecretKey, public_reconstruction}, utils::{hash_to_bytes, xor, interpolate_almostgood}};
 use ark_std::{Zero, One};
-use ark_ff::{fields::Field, batch_inversion, PrimeField};
+use ark_ff::{fields::Field, batch_inversion, PrimeField, FftField};
 
 type E = Bls12_381;
 type Fr = <Bls12<ark_bls12_381::Config> as Pairing>::ScalarField;
@@ -45,12 +44,12 @@ fn main() {
     for i in 0..n {
         partial_decryptions.push(secret_key[i].partial_decrypt(&ct));
     }
-
+    
     // interpolate the polynomial
     let share_domain = Radix2EvaluationDomain::<Fr>::new(n).unwrap();
-    let gamma = share_domain.offset;
+    let gamma = Fr::GENERATOR;
     let fofgamma = share_domain.ifft(&partial_decryptions)[0];
-
+    
     // compute fevals by hashing gs of the ciphertexts to get fevals
     let mut fevals = vec![Fr::zero(); batch_size+1];
     for i in 0..batch_size {
@@ -58,53 +57,46 @@ fn main() {
         fevals[i] = Fr::from_random_bytes(&tg_bytes).unwrap();
     }
     fevals[batch_size] = fofgamma;
+    
+    let f = interpolate_almostgood(&fevals, &tx_domain, fofgamma, gamma);
 
-    // fevals are on an 'almost' nice domain. so we first interpolate quotient polynomial
-    // where the evaluations are determined as q(x) = (f(x) - f(gamma))/(x-gamma)
-    let mut qevals = vec![Fr::zero(); batch_size];
-    let mut den: Vec<Fr> = tx_domain.elements().collect();
-    den.iter_mut().for_each(|x| *x -= gamma);
-    
-    // batch invert den
-    batch_inversion(&mut den);
-    
-    for i in 0..batch_size {
-        qevals[i] = (fevals[i] - fofgamma) * den[i];
+    let fpoly = DensePolynomial::from_coefficients_vec(f);
+
+    // check that interpolation was carried out correctly
+    for i in 0..batch_size{
+        debug_assert_eq!(fpoly.evaluate(&tx_domain.element(i)), fevals[i]);
     }
-
-    let q = tx_domain.ifft(&qevals);
-
-    // now we have q(x) = (f(x) - f(gamma)) / (x-gamma)
-    let mut f  = vec![Fr::zero(); batch_size+1];
-    f[0] = fofgamma - gamma*q[0];
-    for i in 1..batch_size {
-        f[i] = q[i-1] - gamma*q[i];
-    }
-    f[batch_size] = q[batch_size-1];
-
-    // generate opening proof
-    let fpoly = DensePolynomial::from_coefficients_vec(f.clone());
-    let pi = compute_opening_proof::<E>(&crs, &fpoly, &tx_domain.element(0));
+    debug_assert_eq!(fpoly.evaluate(&gamma), fofgamma);
     
-    // println!("fevals: {:?}", fevals);
-    assert_eq!(fpoly.evaluate(&tx_domain.element(0)), fevals[batch_size]);
+    // let mut f  = vec![Fr::zero(); batch_size+1];
+    // f[0] = fofgamma - gamma*q[0];
+    // for i in 1..batch_size {
+    //     f[i] = q[i-1] - gamma*q[i];
+    // }
+    // f[batch_size] = q[batch_size-1];
+
+    // // generate opening proof
+    // let fpoly = DensePolynomial::from_coefficients_vec(f.clone());
+    // // let pi = compute_opening_proof::<E>(&crs, &fpoly, &tx_domain.element(0));
+    
+    
     // SECRET SHARING IS BROKEN give to fft as (omega, omega^2, ... , omega^B=1)
 
-    // now decrypt each of the ciphertexts as m = ct1 \xor H(e(pi, ct2))
-    let mask = E::pairing(pi, ct[0].ct2);
-    let hmask = hash_to_bytes(mask);
-    let m = xor(&ct[0].ct1, &hmask);
+    // // now decrypt each of the ciphertexts as m = ct1 \xor H(e(pi, ct2))
+    // let mask = E::pairing(pi, ct[0].ct2);
+    // let hmask = hash_to_bytes(mask);
+    // let m = xor(&ct[0].ct1, &hmask);
 
-    println!("m: {:?}", m);
+    // println!("m: {:?}", m);
 
-    // check that the kzg proof verifies
-    let lhs = E::pairing(com - (g*fevals[0]), h);
-    let rhs = E::pairing(pi, crs.pk - (h*tx_domain.element(0)));
+    // // check that the kzg proof verifies
+    // let lhs = E::pairing(com - (g*fevals[batch_size]), h);
+    // let rhs = E::pairing(pi, crs.pk - (h*tx_domain.element(0)));
 
-    // assert_eq!(lhs, rhs);
-    // let messages = public_reconstruction(partial_decryptions, &ct, &crs);
+    // // assert_eq!(lhs, rhs);
+    // // let messages = public_reconstruction(partial_decryptions, &ct, &crs);
 
-    // println!("messages: {:?}", messages);
+    // // println!("messages: {:?}", messages);
 }
 
 pub fn compute_opening_proof<E: Pairing>(
