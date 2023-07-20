@@ -1,10 +1,14 @@
 use ark_ec::{pairing::Pairing, Group};
-use ark_ff::{Field, batch_inversion, FftField};
+use ark_ff::{batch_inversion, FftField, Field};
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 use ark_serialize::*;
-use ark_std::{end_timer, start_timer, Zero, One};
+use ark_std::{end_timer, start_timer, One, Zero};
 
-use crate::{encryption::Ciphertext, utils::{hash_to_bytes, xor}, dealer::CRS};
+use crate::{
+    dealer::CRS,
+    encryption::Ciphertext,
+    utils::{hash_to_bytes, xor},
+};
 
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct SecretKey<E: Pairing> {
@@ -48,21 +52,21 @@ pub fn public_reconstruction<E: Pairing>(
     partial_decryptions: Vec<E::ScalarField>,
     ct: &Vec<Ciphertext<E>>,
     crs: &CRS<E>,
-) -> Vec<[u8; 32]>{
+) -> Vec<[u8; 32]> {
     let batch_size = ct.len();
     let n = partial_decryptions.len();
 
     let g = E::G1::generator();
-    
+
     let share_domain = Radix2EvaluationDomain::<E::ScalarField>::new(n).unwrap();
-    let top_domain = Radix2EvaluationDomain::<E::ScalarField>::new(2*batch_size).unwrap();
+    let top_domain = Radix2EvaluationDomain::<E::ScalarField>::new(2 * batch_size).unwrap();
     let tx_domain = Radix2EvaluationDomain::<E::ScalarField>::new(batch_size).unwrap();
     let gamma = E::ScalarField::GENERATOR;
 
     let fofgamma = share_domain.ifft(&partial_decryptions)[0];
 
     // compute fevals by hashing gs of the ciphertexts to get fevals
-    let mut fevals = vec![E::ScalarField::zero(); batch_size+1];
+    let mut fevals = vec![E::ScalarField::zero(); batch_size + 1];
     for i in 0..batch_size {
         let tg_bytes = hash_to_bytes(ct[i].gs);
         fevals[i] = E::ScalarField::from_random_bytes(&tg_bytes).unwrap();
@@ -74,25 +78,25 @@ pub fn public_reconstruction<E: Pairing>(
     let mut qevals = vec![E::ScalarField::zero(); batch_size];
     let mut den: Vec<E::ScalarField> = tx_domain.elements().collect();
     den.iter_mut().for_each(|x| *x -= gamma);
-    
+
     // batch invert den
     batch_inversion(&mut den);
-    
+
     for i in 0..batch_size {
         qevals[i] = (fevals[i] - fofgamma) * den[i];
     }
 
     let q = tx_domain.ifft(&qevals);
-    // TODO: FIX BELOW THIS 
+    // TODO: FIX BELOW THIS
     let mut f = q.clone();
     for i in 1..batch_size {
-        f[i] -= gamma*q[i-1];
+        f[i] -= gamma * q[i - 1];
     }
 
     // use FK22 to get all the KZG proofs in O(nlog n) time
     let mut v = f.clone();
     v.reverse();
-    v.resize(2*batch_size, E::ScalarField::zero());
+    v.resize(2 * batch_size, E::ScalarField::zero());
     let v = top_domain.fft(&v);
 
     // get all the roots of top_domain
@@ -100,13 +104,13 @@ pub fn public_reconstruction<E: Pairing>(
     let mut top_domain_roots: Vec<E::ScalarField> = top_domain.elements().collect();
 
     top_domain_roots[0] = E::ScalarField::one();
-    for i in 1..2*batch_size {
+    for i in 1..2 * batch_size {
         top_domain_roots[i] = top_domain_roots[i - 1] * omega;
     }
 
     // h = crs.powers_of_top_tau[i] ^ (v[i] . top_domain_roots[i])
-    let mut h = vec![g; 2*batch_size];
-    for i in 0..2*batch_size {
+    let mut h = vec![g; 2 * batch_size];
+    for i in 0..2 * batch_size {
         h[i] = crs.powers_of_top_tau[i] * (v[i] * top_domain_roots[i]);
     }
 
@@ -116,9 +120,9 @@ pub fn public_reconstruction<E: Pairing>(
 
     // fft on h to get KZG proofs
     let pi = tx_domain.fft(&h);
-    
+
     // now decrypt each of the ciphertexts as m = ct1 \xor H(e(pi, ct2))
-    let mut m = vec![[0u8;32]; batch_size];
+    let mut m = vec![[0u8; 32]; batch_size];
     for i in 0..batch_size {
         let mask = E::pairing(pi[i], ct[i].ct2);
         let hmask = hash_to_bytes(mask);

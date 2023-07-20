@@ -1,6 +1,6 @@
 use crate::utils::transpose;
 use ark_ec::{pairing::Pairing, scalar_mul::fixed_base::FixedBase, Group};
-use ark_ff::{PrimeField, FftField};
+use ark_ff::{FftField, PrimeField};
 use ark_poly::{domain::EvaluationDomain, Radix2EvaluationDomain};
 use ark_std::{end_timer, rand::RngCore, start_timer, One, UniformRand, Zero};
 use std::{iter, marker::PhantomData, vec};
@@ -16,6 +16,7 @@ pub struct Dealer<E: Pairing> {
     n: usize,
     pub long_term_secret: E::ScalarField, // L_0(1)
     pub tau: E::ScalarField,
+    pub alpha: E::ScalarField,
     _engine: PhantomData<E>,
 }
 
@@ -29,6 +30,7 @@ where
             n,
             long_term_secret: E::ScalarField::zero(),
             tau: E::ScalarField::zero(),
+            alpha: E::ScalarField::zero(),
             _engine: PhantomData,
         }
     }
@@ -127,18 +129,19 @@ where
 
         let crs = CRS::<E> {
             powers_of_g,
-            pk: h*tau,
+            pk: h * tau,
             powers_of_top_tau,
         };
 
         (crs, transpose(lag_shares))
     }
 
-    pub fn epoch_setup<R: RngCore>(&self, rng: &mut R) -> (E::G1, Vec<E::ScalarField>) {
+    pub fn epoch_setup<R: RngCore>(&mut self, rng: &mut R) -> (E::G1, Vec<E::ScalarField>) {
         // secret share alpha*long_term_secret for a random alpha
         // publish com = g^alpha
 
         let alpha = E::ScalarField::rand(rng);
+        self.alpha = alpha;
         let com = E::G1::generator() * alpha;
 
         let mut coeffs = vec![E::ScalarField::zero(); self.n];

@@ -3,10 +3,9 @@ use ark_ff::Field;
 use ark_serialize::*;
 use ark_std::{end_timer, rand::RngCore, start_timer, UniformRand};
 use merlin::Transcript;
-use retry::{retry, delay::Fixed};
+use retry::{delay::Fixed, retry};
 
 use crate::utils::{hash_to_bytes, xor};
-
 
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct DLogProof<E: Pairing> {
@@ -77,16 +76,16 @@ pub fn encrypt<E: Pairing, R: RngCore>(
         let gs = g * s;
         let hgs = hash_to_bytes(gs);
         let tg_option = E::ScalarField::from_random_bytes(&hgs);
-        
+
         match tg_option {
             Some(tg) => Ok((s, gs, tg)),
             None => {
-                #[cfg(debug_assertions)] {
+                #[cfg(debug_assertions)]
+                {
                     dbg!("Failed to hash to field element, retrying...");
                 }
                 Err(())
-            },
-
+            }
         }
     });
 
@@ -99,7 +98,7 @@ pub fn encrypt<E: Pairing, R: RngCore>(
     // xor msg and hmask
     let ct1: [u8; 32] = xor(&msg, &hmask).as_slice().try_into().unwrap();
 
-    let ct2 = (pk - h * x) * rho;
+    let ct2 = (pk - (h * x)) * rho;
 
     // Prove knowledge of discrete log of S with ct1, ct2, S, x as tags
     let mut ts: Transcript = Transcript::new(&[0u8]);
