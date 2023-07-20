@@ -1,4 +1,4 @@
-use crate::utils::transpose;
+use crate::utils::{transpose, lagrange_coefficients};
 use ark_ec::{pairing::Pairing, scalar_mul::fixed_base::FixedBase, Group};
 use ark_ff::{FftField, PrimeField};
 use ark_poly::{domain::EvaluationDomain, Radix2EvaluationDomain};
@@ -95,18 +95,7 @@ where
         // can be improved to O(nlogn) using FFT on a good domain first and then swapping out one point in each coefficient
         // and one entire coefficient
         let gamma = E::ScalarField::GENERATOR;
-        let mut lag_coeffs: Vec<E::ScalarField> = vec![E::ScalarField::one(); self.batch_size + 1];
-        for i in 0..self.batch_size + 1 {
-            let mut num = E::ScalarField::one();
-            let mut den = E::ScalarField::one();
-            for j in 0..self.batch_size + 1 {
-                if i != j {
-                    num *= gamma - lag_domain[j];
-                    den *= lag_domain[i] - lag_domain[j];
-                }
-            }
-            lag_coeffs[i] = num / den;
-        }
+        let lag_coeffs: Vec<E::ScalarField> = lagrange_coefficients(lag_domain, gamma);
 
         // save the long_term_secret L_B(gamma)
         self.long_term_secret = lag_coeffs[self.batch_size];
@@ -117,7 +106,7 @@ where
         for i in 0..self.batch_size {
             // secret share i-th coefficient
             let mut coeffs = vec![E::ScalarField::zero(); self.n];
-            coeffs[0] = powers_of_tau[i];
+            coeffs[0] = lag_coeffs[i];
             // for j in 1..self.n {
             //     coeffs[j] = E::ScalarField::rand(rng);
             // }

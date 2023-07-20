@@ -88,23 +88,23 @@ fn main() {
     println!("shouldbe_fofgamma: {}", shouldbe_fofgamma);
 
     // generate opening proof
-    // let pi = compute_opening_proof::<E>(&crs, &fpoly, &tx_domain.element(0));
+    
 
     // check that the kzg proof verifies
-    // for i in 0..batch_size{
-    // let lhs = E::pairing(com - (g*fpoly.evaluate(&tx_domain.element(0))), h);
-    // let rhs = E::pairing(pi, crs.pk - (h*tx_domain.element(0)));
-    // assert_eq!(lhs, rhs);
-    // }
+    for i in 0..batch_size{
+        let pi = compute_opening_proof::<E>(&crs, &fpoly, &tx_domain.element(i));
+        let lhs = E::pairing(com - (g*fpoly.evaluate(&tx_domain.element(i))), h);
+        let rhs = E::pairing(pi, crs.pk - (h*tx_domain.element(i)));
+        assert_eq!(lhs, rhs);
+        let mask = E::pairing(pi, ct[i].ct2);
+        let hmask = hash_to_bytes(mask);
+        let m = xor(&ct[i].ct1, &hmask);
 
-    // SECRET SHARING IS BROKEN give to fft as (omega, omega^2, ... , omega^B=1)
+        println!("m: {:?}", m);
+    }
 
     // now decrypt each of the ciphertexts as m = ct1 \xor H(e(pi, ct2))
-    // let mask = E::pairing(pi, ct[0].ct2);
-    // let hmask = hash_to_bytes(mask);
-    // let m = xor(&ct[0].ct1, &hmask);
-
-    // println!("m: {:?}", m);
+    
 
     // // let messages = public_reconstruction(partial_decryptions, &ct, &crs);
 
