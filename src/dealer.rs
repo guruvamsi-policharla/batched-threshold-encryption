@@ -1,6 +1,6 @@
 use crate::utils::{lagrange_coefficients, transpose};
 use ark_ec::{pairing::Pairing, scalar_mul::fixed_base::FixedBase, Group};
-use ark_ff::{FftField, PrimeField, Field};
+use ark_ff::{FftField, PrimeField};
 use ark_poly::{domain::EvaluationDomain, Radix2EvaluationDomain};
 use ark_std::{end_timer, rand::RngCore, start_timer, One, UniformRand, Zero};
 use std::{iter, marker::PhantomData, vec};
@@ -69,16 +69,14 @@ where
         let top_tau = top_domain.fft(&top_tau);
 
         // Compute powers of top_tau
-        let powers_of_top_tau = top_tau.iter().map(|x| g * x).collect();
+        let window_size = FixedBase::get_mul_window_size(2 * self.batch_size);
+        let scalar_size = E::ScalarField::MODULUS_BIT_SIZE as usize;
 
-        // let window_size = FixedBase::get_mul_window_size(2 * self.batch_size);
-        // let scalar_size = E::ScalarField::MODULUS_BIT_SIZE as usize;
-
-        // let top_tau_time = start_timer!(|| "Generating powers of top_tau");
-        // let top_tau_table = FixedBase::get_window_table(scalar_size, window_size, g);
-        // let powers_of_top_tau =
-        //     FixedBase::msm::<E::G1>(scalar_size, window_size, &top_tau_table, &top_tau);
-        // end_timer!(top_tau_time);
+        let top_tau_time = start_timer!(|| "Generating powers of top_tau");
+        let top_tau_table = FixedBase::get_window_table(scalar_size, window_size, g);
+        let powers_of_top_tau =
+            FixedBase::msm::<E::G1>(scalar_size, window_size, &top_tau_table, &top_tau);
+        end_timer!(top_tau_time);
 
         // Secret share the lagrange coefficients for the domain {1, omega, omega^2, ... omega^{batch_size-1}, tau} at the evaluation point gamma
         let tx_domain = Radix2EvaluationDomain::<E::ScalarField>::new(self.batch_size).unwrap();
@@ -109,9 +107,9 @@ where
             // secret share i-th coefficient
             let mut coeffs = vec![E::ScalarField::zero(); self.n];
             coeffs[0] = lag_coeffs[i];
-            // for j in 1..self.n {
-            //     coeffs[j] = E::ScalarField::rand(rng);
-            // }
+            for j in 1..self.n/2 {
+                coeffs[j] = E::ScalarField::rand(rng);
+            }
 
             // use fft to compute shares
             let evals = share_domain.fft(&coeffs);
@@ -137,9 +135,9 @@ where
 
         let mut coeffs = vec![E::ScalarField::zero(); self.n];
         coeffs[0] = alpha * self.long_term_secret;
-        // for j in 1..self.n {
-        //     coeffs[j] = E::ScalarField::rand(rng);
-        // }
+        for j in 1..self.n/2 {
+            coeffs[j] = E::ScalarField::rand(rng);
+        }
 
         // use fft to compute shares
         let share_domain = Radix2EvaluationDomain::<E::ScalarField>::new(self.n).unwrap();

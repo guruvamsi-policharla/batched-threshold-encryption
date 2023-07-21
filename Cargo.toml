@@ -15,9 +15,14 @@ ark-bls12-381 = {version = "0.4.0", default-features = false, features = ["curve
 blake3 = { version = "1.0", default-features = false }
 merlin = { version = "3.0", default-features = false }
 retry = { version = "2.0", default-features = false }
+criterion = { version = "0.5", features = ["html_reports"] }
 
 [features]
 asm = [ "ark-ff/asm" ]
+
+[[bench]]
+name = "encryption"
+harness = false
 
 [profile.dev]
 opt-level = 3

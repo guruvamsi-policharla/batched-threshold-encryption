@@ -1,5 +1,5 @@
-use ark_ec::{pairing::Pairing, CurveGroup, VariableBaseMSM, Group};
-use ark_ff::{batch_inversion, FftField, PrimeField, Field};
+use ark_ec::{pairing::Pairing, CurveGroup, VariableBaseMSM};
+use ark_ff::{batch_inversion, FftField, PrimeField};
 use ark_poly::{
     univariate::DensePolynomial, DenseUVPolynomial, EvaluationDomain, Polynomial,
     Radix2EvaluationDomain,
@@ -50,11 +50,7 @@ pub fn interpolate_almostgood<F: FftField>(
     gamma: F,
 ) -> Vec<F> {
     let mut qevals = vec![F::zero(); domain.size()];
-    let mut den: Vec<F> = vec![F::one(); domain.size()];
-    let omega = domain.group_gen;
-    for i in 1..domain.size() {
-        den[i] = den[i - 1] * omega;
-    }
+    let mut den: Vec<F> = domain.elements().collect();
     den.iter_mut().for_each(|x| *x -= gamma);
 
     // batch invert den
@@ -93,6 +89,7 @@ pub fn lagrange_coefficients<F: FftField>(domain: Vec<F>, x: F) -> Vec<F> {
     lag_coeffs
 }
 
+/// compute KZG opening proof
 pub fn compute_opening_proof<E: Pairing>(
     crs: &CRS<E>,
     polynomial: &DensePolynomial<E::ScalarField>,
@@ -134,31 +131,26 @@ fn convert_to_bigints<F: PrimeField>(p: &[F]) -> Vec<F::BigInt> {
     coeffs
 }
 
+/// Computes all the openings of a KZG commitment in O(n log n) time
+/// See https://github.com/khovratovich/Kate/blob/master/Kate_amortized.pdf
+/// eprint version has a bug and hasn't been updated
 pub fn open_all_values<E: Pairing>(
     powers_of_g: &Vec<E::G1>,
     f: &Vec<E::ScalarField>,
     domain: &Radix2EvaluationDomain<E::ScalarField>,
 ) -> Vec<E::G1> {
-    let g = E::G1::generator();
-
     let top_domain = Radix2EvaluationDomain::<E::ScalarField>::new(2 * domain.size()).unwrap();
 
     // use FK22 to get all the KZG proofs in O(nlog n) time =======================
+    // todo: preprocess below
     let mut y = powers_of_g.clone();
     y.truncate(domain.size());
     y.reverse();
-    y.resize(2*domain.size(), E::G1::zero());
-    // println!("y = {:?}", y);
+    y.resize(2 * domain.size(), E::G1::zero());
     let y = top_domain.fft(&y);
-    // println!("yfft = {:?}", y);
-    
-    // let mut v = f.clone();
-    // v.reverse();
-    // v.truncate(domain.size());
-    // v.resize(2 * domain.size(), E::ScalarField::zero());
-    // let v = top_domain.fft(&v);
-    // println!("v = {:?}", v);
 
+    // if f = {f0 ,f1, ..., fd}
+    // v = {fd, (d-1 0s), fd, f, f1, ..., fd-2}
     let f = f[1..f.len()].to_vec();
     let mut v = vec![f[f.len() - 1]];
     v.resize(domain.size(), E::ScalarField::zero());
@@ -168,30 +160,28 @@ pub fn open_all_values<E: Pairing>(
     }
     assert_eq!(v.len(), 2 * domain.size());
     let v = top_domain.fft(&v);
-    
-    // h = y[i] ^ (v[i] . top_domain_roots[i])
+
+    // h = y \odot v
     let mut h = vec![E::G1::zero(); 2 * domain.size()];
     for i in 0..2 * domain.size() {
-        h[i] = y[i] * (v[i]);// * top_domain_roots[i]);
+        h[i] = y[i] * (v[i]);
     }
-    
+
     // inverse fft on h
     let mut h = top_domain.ifft(&h);
-    
 
-    
     h.truncate(domain.size());
 
     // fft on h to get KZG proofs
     let pi = domain.fft(&h);
-    
+
     pi
 }
 
 #[cfg(test)]
 mod tests {
     use ark_bls12_381::Bls12_381;
-    use ark_ec::{bls12::Bls12, pairing::Pairing};
+    use ark_ec::{bls12::Bls12, pairing::Pairing, Group};
     use ark_poly::{univariate::DensePolynomial, DenseUVPolynomial, Polynomial};
     use ark_std::{UniformRand, Zero};
 
@@ -210,10 +200,10 @@ mod tests {
         let domain_size = 1 << 5;
         let domain = Radix2EvaluationDomain::<Fr>::new(domain_size).unwrap();
 
-        let mut dealer = Dealer::<E>::new(domain_size, 1<<5);
+        let mut dealer = Dealer::<E>::new(domain_size, 1 << 5);
         let (crs, _) = dealer.setup(&mut rng);
 
-        let mut f = vec![Fr::zero(); domain_size+1];
+        let mut f = vec![Fr::zero(); domain_size + 1];
         for i in 0..domain_size {
             f[i] = Fr::rand(&mut rng);
         }
@@ -226,8 +216,8 @@ mod tests {
         let h = G2::generator();
 
         for i in 0..domain_size {
-            let lhs = E::pairing(com - (g*fpoly.evaluate(&domain.element(i))), h);
-            let rhs = E::pairing(pi[i], crs.pk - (h*domain.element(i)));
+            let lhs = E::pairing(com - (g * fpoly.evaluate(&domain.element(i))), h);
+            let rhs = E::pairing(pi[i], crs.pk - (h * domain.element(i)));
             assert_eq!(lhs, rhs);
         }
     }
