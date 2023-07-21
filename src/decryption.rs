@@ -2,7 +2,7 @@ use ark_ec::pairing::Pairing;
 use ark_ff::{FftField, Field};
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 use ark_serialize::*;
-use ark_std::{end_timer, start_timer, Zero};
+use ark_std::{Zero};
 
 use crate::{
     dealer::CRS,
@@ -26,7 +26,6 @@ impl<E: Pairing> SecretKey<E> {
 
     /// each party in the committee computes a partial decryption
     pub fn partial_decrypt(&self, ct: &Vec<Ciphertext<E>>) -> E::ScalarField {
-        let partial_dec_timer = start_timer!(|| "Partial decryption");
 
         let mut partial_decryption = self.epoch_share;
         let batch_size = self.lag_share.len();
@@ -42,8 +41,6 @@ impl<E: Pairing> SecretKey<E> {
             let peval = E::ScalarField::from_random_bytes(&tg_bytes).unwrap();
             partial_decryption += self.lag_share[i] * peval;
         }
-
-        end_timer!(partial_dec_timer);
 
         partial_decryption
     }

@@ -2,7 +2,7 @@ use crate::utils::{lagrange_coefficients, transpose};
 use ark_ec::{pairing::Pairing, scalar_mul::fixed_base::FixedBase, Group};
 use ark_ff::{FftField, PrimeField};
 use ark_poly::{domain::EvaluationDomain, Radix2EvaluationDomain};
-use ark_std::{end_timer, rand::RngCore, start_timer, One, UniformRand, Zero};
+use ark_std::{rand::RngCore, One, UniformRand, Zero};
 use std::{iter, marker::PhantomData, vec};
 
 pub struct CRS<E: Pairing> {
@@ -47,11 +47,9 @@ where
         let window_size = FixedBase::get_mul_window_size(self.batch_size + 1);
         let scalar_size = E::ScalarField::MODULUS_BIT_SIZE as usize;
 
-        let g_time = start_timer!(|| "Generating powers of G");
         let g_table = FixedBase::get_window_table(scalar_size, window_size, g);
         let powers_of_g =
             FixedBase::msm::<E::G1>(scalar_size, window_size, &g_table, &powers_of_tau);
-        end_timer!(g_time);
 
         // Compute the Toeplitz matrix preprocessing ==================================================
         let mut top_tau = powers_of_tau.clone();
@@ -67,12 +65,9 @@ where
         let window_size = FixedBase::get_mul_window_size(2 * self.batch_size);
         let scalar_size = E::ScalarField::MODULUS_BIT_SIZE as usize;
 
-        let top_tau_time = start_timer!(|| "Generating powers of top_tau");
         let top_tau_table = FixedBase::get_window_table(scalar_size, window_size, g);
         let y =
             FixedBase::msm::<E::G1>(scalar_size, window_size, &top_tau_table, &top_tau);
-        
-        end_timer!(top_tau_time);
 
         // Secret share the lagrange coefficients for the domain {1, omega, omega^2, ... omega^{batch_size-1}, tau} at the evaluation point gamma
         let tx_domain = Radix2EvaluationDomain::<E::ScalarField>::new(self.batch_size).unwrap();

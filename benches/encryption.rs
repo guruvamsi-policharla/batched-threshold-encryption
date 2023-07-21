@@ -1,16 +1,37 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use ark_bls12_381::Bls12_381;
+use ark_ec::{bls12::Bls12, pairing::Pairing};
+use batch_threshold::{dealer::Dealer, decryption::SecretKey, encryption::encrypt};
+use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId};
+use ark_std::One;
 
-fn fibonacci(n: u64) -> u64 {
-    match n {
-        0 => 1,
-        1 => 1,
-        n => fibonacci(n-1) + fibonacci(n-2),
+type E = Bls12_381;
+type Fr = <Bls12<ark_bls12_381::Config> as Pairing>::ScalarField;
+
+fn bench_encrypt(c: &mut Criterion) {
+    let mut rng = ark_std::test_rng();
+    
+    let n = 1 << 4;
+    let mut group = c.benchmark_group("encrypt");
+    for size in 2..5 {
+        let batch_size = 1 << size;   
+
+        let mut dealer = Dealer::<E>::new(batch_size, n);
+        let (crs, lag_shares) = dealer.setup(&mut rng);
+        let (com, epoch_shares) = dealer.epoch_setup(&mut rng);
+
+        let mut secret_key: Vec<SecretKey<E>> = Vec::new();
+        for i in 0..n {
+            secret_key.push(SecretKey::new(lag_shares[i].clone(), epoch_shares[i]));
+        }
+
+        let msg = [1u8; 32];
+
+        group.bench_with_input(BenchmarkId::from_parameter(batch_size), &(msg, com, crs.pk), |b, &inp| {
+            b.iter(|| encrypt::<E, _>(inp.0, Fr::one(), inp.1, inp.2, &mut rng));
+        });
     }
+    group.finish();
 }
 
-fn criterion_benchmark(c: &mut Criterion) {
-    c.bench_function("fib 20", |b| b.iter(|| fibonacci(black_box(20))));
-}
-
-criterion_group!(benches, criterion_benchmark);
+criterion_group!(benches, bench_encrypt);
 criterion_main!(benches);

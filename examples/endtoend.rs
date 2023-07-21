@@ -18,11 +18,11 @@ fn main() {
 
     let mut dealer = Dealer::<E>::new(batch_size, n);
     let (crs, lag_shares) = dealer.setup(&mut rng);
-    let (com, evals) = dealer.epoch_setup(&mut rng);
+    let (com, epoch_shares) = dealer.epoch_setup(&mut rng);
 
     let mut secret_key: Vec<SecretKey<E>> = Vec::new();
     for i in 0..n {
-        secret_key.push(SecretKey::new(lag_shares[i].clone(), evals[i]));
+        secret_key.push(SecretKey::new(lag_shares[i].clone(), epoch_shares[i]));
     }
 
     let tx_domain = Radix2EvaluationDomain::<Fr>::new(batch_size).unwrap();

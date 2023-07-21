@@ -1,9 +1,9 @@
 use ark_ec::{pairing::Pairing, Group};
 use ark_ff::Field;
 use ark_serialize::*;
-use ark_std::{end_timer, rand::RngCore, start_timer, UniformRand};
+use ark_std::{rand::RngCore, UniformRand};
 use merlin::Transcript;
-use retry::{delay::Fixed, retry};
+use retry::{delay::{Fixed, NoDelay}, retry};
 
 use crate::utils::{hash_to_bytes, xor};
 
@@ -63,15 +63,13 @@ pub fn encrypt<E: Pairing, R: RngCore>(
     pk: E::G2,
     rng: &mut R,
 ) -> Ciphertext<E> {
-    let enc_timer = start_timer!(|| "Encrypting");
-
     let g = E::G1::generator();
     let h = E::G2::generator();
     let rho = E::ScalarField::rand(rng);
 
     // hash element S to curve to get tg
     // retry if bytes cannot be converted to a field element
-    let result = retry(Fixed::from_millis(100), || {
+    let result = retry(NoDelay, || {
         let s = E::ScalarField::rand(rng);
         let gs = g * s;
         let hgs = hash_to_bytes(gs);
@@ -133,8 +131,6 @@ pub fn encrypt<E: Pairing, R: RngCore>(
     debug_assert_eq!(g * z, u + gs * c);
 
     let pi = DLogProof { u, z };
-
-    end_timer!(enc_timer);
 
     Ciphertext {
         ct1,
