@@ -135,20 +135,13 @@ fn convert_to_bigints<F: PrimeField>(p: &[F]) -> Vec<F::BigInt> {
 /// See https://github.com/khovratovich/Kate/blob/master/Kate_amortized.pdf
 /// eprint version has a bug and hasn't been updated
 pub fn open_all_values<E: Pairing>(
-    powers_of_g: &Vec<E::G1>,
+    y: &Vec<E::G1>,
     f: &Vec<E::ScalarField>,
     domain: &Radix2EvaluationDomain<E::ScalarField>,
 ) -> Vec<E::G1> {
     let top_domain = Radix2EvaluationDomain::<E::ScalarField>::new(2 * domain.size()).unwrap();
 
     // use FK22 to get all the KZG proofs in O(nlog n) time =======================
-    // todo: preprocess below
-    let mut y = powers_of_g.clone();
-    y.truncate(domain.size());
-    y.reverse();
-    y.resize(2 * domain.size(), E::G1::zero());
-    let y = top_domain.fft(&y);
-
     // if f = {f0 ,f1, ..., fd}
     // v = {fd, (d-1 0s), fd, f, f1, ..., fd-2}
     let f = f[1..f.len()].to_vec();
@@ -158,7 +151,7 @@ pub fn open_all_values<E: Pairing>(
     for &e in f.iter().take(f.len() - 1) {
         v.push(e);
     }
-    assert_eq!(v.len(), 2 * domain.size());
+    debug_assert_eq!(v.len(), 2 * domain.size());
     let v = top_domain.fft(&v);
 
     // h = y \odot v
@@ -209,7 +202,7 @@ mod tests {
         }
         let fpoly = DensePolynomial::from_coefficients_vec(f.clone());
         let com = commit_g1::<E>(&crs.powers_of_g, &fpoly);
-        let pi = open_all_values::<E>(&crs.powers_of_g, &f, &domain);
+        let pi = open_all_values::<E>(&crs.y, &f, &domain);
 
         // verify the kzg proof
         let g = G1::generator();

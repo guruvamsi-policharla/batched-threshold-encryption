@@ -77,7 +77,7 @@ pub fn decrypt_all<E: Pairing>(
     let f = interpolate_almostgood(&fevals, &tx_domain, fofgamma, gamma);
 
     // use FK22 to get all the KZG proofs in O(nlog n) time =======================
-    let pi = open_all_values::<E>(&crs.powers_of_g, &f, &tx_domain);
+    let pi = open_all_values::<E>(&crs.y, &f, &tx_domain);
 
     // now decrypt each of the ciphertexts as m = ct1 \xor H(e(pi, ct2))
     let mut m = vec![[0u8; 32]; batch_size];

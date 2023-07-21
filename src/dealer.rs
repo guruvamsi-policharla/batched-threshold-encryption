@@ -9,14 +9,12 @@ pub struct CRS<E: Pairing> {
     pub powers_of_g: Vec<E::G1>,
     pub pk: E::G2,
 
-    pub powers_of_top_tau: Vec<E::G1>,
+    pub y: Vec<E::G1>,
 }
 pub struct Dealer<E: Pairing> {
     batch_size: usize,
     n: usize,
     pub long_term_secret: E::ScalarField, // L_0(1)
-    pub tau: E::ScalarField,
-    pub alpha: E::ScalarField,
     _engine: PhantomData<E>,
 }
 
@@ -29,8 +27,6 @@ where
             batch_size,
             n,
             long_term_secret: E::ScalarField::zero(),
-            tau: E::ScalarField::zero(),
-            alpha: E::ScalarField::zero(),
             _engine: PhantomData,
         }
     }
@@ -38,7 +34,6 @@ where
     pub fn setup<R: RngCore>(&mut self, rng: &mut R) -> (CRS<E>, Vec<Vec<E::ScalarField>>) {
         // Sample tau and compute its powers ==========================================================
         let tau = E::ScalarField::rand(rng);
-        self.tau = tau;
         let powers_of_tau: Vec<E::ScalarField> =
             iter::successors(Some(E::ScalarField::one()), |p| Some(*p * tau))
                 .take(self.batch_size + 1)
@@ -74,8 +69,9 @@ where
 
         let top_tau_time = start_timer!(|| "Generating powers of top_tau");
         let top_tau_table = FixedBase::get_window_table(scalar_size, window_size, g);
-        let powers_of_top_tau =
+        let y =
             FixedBase::msm::<E::G1>(scalar_size, window_size, &top_tau_table, &top_tau);
+        
         end_timer!(top_tau_time);
 
         // Secret share the lagrange coefficients for the domain {1, omega, omega^2, ... omega^{batch_size-1}, tau} at the evaluation point gamma
@@ -119,7 +115,7 @@ where
         let crs = CRS::<E> {
             powers_of_g,
             pk: h * tau,
-            powers_of_top_tau,
+            y,
         };
 
         (crs, transpose(lag_shares))
@@ -130,7 +126,6 @@ where
         // publish com = g^alpha
 
         let alpha = E::ScalarField::rand(rng);
-        self.alpha = alpha;
         let com = E::G1::generator() * alpha;
 
         let mut coeffs = vec![E::ScalarField::zero(); self.n];
