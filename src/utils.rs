@@ -1,6 +1,14 @@
-use ark_ff::{batch_inversion, FftField};
-use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
+use ark_ec::{pairing::Pairing, CurveGroup, VariableBaseMSM, Group};
+use ark_ff::{batch_inversion, FftField, PrimeField, Field};
+use ark_poly::{
+    univariate::DensePolynomial, DenseUVPolynomial, EvaluationDomain, Polynomial,
+    Radix2EvaluationDomain,
+};
 use ark_serialize::CanonicalSerialize;
+use ark_std::{One, Zero};
+use std::ops::Div;
+
+use crate::dealer::CRS;
 
 pub fn transpose<T>(v: Vec<Vec<T>>) -> Vec<Vec<T>> {
     assert!(!v.is_empty());
@@ -85,14 +93,144 @@ pub fn lagrange_coefficients<F: FftField>(domain: Vec<F>, x: F) -> Vec<F> {
     lag_coeffs
 }
 
+pub fn compute_opening_proof<E: Pairing>(
+    crs: &CRS<E>,
+    polynomial: &DensePolynomial<E::ScalarField>,
+    point: &E::ScalarField,
+) -> E::G1 {
+    let eval = polynomial.evaluate(point);
+    let eval_as_poly = DensePolynomial::from_coefficients_vec(vec![eval]);
+    let numerator = polynomial - &eval_as_poly;
+    let divisor = DensePolynomial::from_coefficients_vec(vec![
+        E::ScalarField::zero() - point,
+        E::ScalarField::one(),
+    ]);
+    let witness_polynomial = numerator.div(&divisor);
+
+    commit_g1::<E>(&crs.powers_of_g, &witness_polynomial)
+}
+
+pub fn commit_g1<E: Pairing>(srs: &[E::G1], polynomial: &DensePolynomial<E::ScalarField>) -> E::G1 {
+    if srs.len() - 1 < polynomial.degree() {
+        panic!(
+            "SRS size to small! Can't commit to polynomial of degree {} with srs of size {}",
+            polynomial.degree(),
+            srs.len()
+        );
+    }
+
+    let plain_coeffs = convert_to_bigints(&polynomial.coeffs());
+    let affine_srs = srs
+        .iter()
+        .map(|g| g.into_affine())
+        .collect::<Vec<E::G1Affine>>();
+    <E::G1 as VariableBaseMSM>::msm_bigint(&affine_srs, &plain_coeffs)
+}
+
+fn convert_to_bigints<F: PrimeField>(p: &[F]) -> Vec<F::BigInt> {
+    let coeffs = ark_std::cfg_iter!(p)
+        .map(|s| s.into_bigint())
+        .collect::<Vec<_>>();
+    coeffs
+}
+
+pub fn open_all_values<E: Pairing>(
+    powers_of_g: &Vec<E::G1>,
+    f: &Vec<E::ScalarField>,
+    domain: &Radix2EvaluationDomain<E::ScalarField>,
+) -> Vec<E::G1> {
+    let g = E::G1::generator();
+
+    let top_domain = Radix2EvaluationDomain::<E::ScalarField>::new(2 * domain.size()).unwrap();
+
+    // use FK22 to get all the KZG proofs in O(nlog n) time =======================
+    let mut y = powers_of_g.clone();
+    y.truncate(domain.size());
+    y.reverse();
+    y.resize(2*domain.size(), E::G1::zero());
+    // println!("y = {:?}", y);
+    let y = top_domain.fft(&y);
+    // println!("yfft = {:?}", y);
+    
+    // let mut v = f.clone();
+    // v.reverse();
+    // v.truncate(domain.size());
+    // v.resize(2 * domain.size(), E::ScalarField::zero());
+    // let v = top_domain.fft(&v);
+    // println!("v = {:?}", v);
+
+    let f = f[1..f.len()].to_vec();
+    let mut v = vec![f[f.len() - 1]];
+    v.resize(domain.size(), E::ScalarField::zero());
+    v.push(f[f.len() - 1]);
+    for &e in f.iter().take(f.len() - 1) {
+        v.push(e);
+    }
+    assert_eq!(v.len(), 2 * domain.size());
+    let v = top_domain.fft(&v);
+    
+    // h = y[i] ^ (v[i] . top_domain_roots[i])
+    let mut h = vec![E::G1::zero(); 2 * domain.size()];
+    for i in 0..2 * domain.size() {
+        h[i] = y[i] * (v[i]);// * top_domain_roots[i]);
+    }
+    
+    // inverse fft on h
+    let mut h = top_domain.ifft(&h);
+    
+
+    
+    h.truncate(domain.size());
+
+    // fft on h to get KZG proofs
+    let pi = domain.fft(&h);
+    
+    pi
+}
+
 #[cfg(test)]
 mod tests {
+    use ark_bls12_381::Bls12_381;
     use ark_ec::{bls12::Bls12, pairing::Pairing};
     use ark_poly::{univariate::DensePolynomial, DenseUVPolynomial, Polynomial};
     use ark_std::{UniformRand, Zero};
 
+    use crate::dealer::Dealer;
+
     use super::*;
     type Fr = <Bls12<ark_bls12_381::Config> as Pairing>::ScalarField;
+    type G1 = <Bls12<ark_bls12_381::Config> as Pairing>::G1;
+    type G2 = <Bls12<ark_bls12_381::Config> as Pairing>::G2;
+    type E = Bls12_381;
+
+    #[test]
+    fn open_all_test() {
+        let mut rng = ark_std::test_rng();
+
+        let domain_size = 1 << 5;
+        let domain = Radix2EvaluationDomain::<Fr>::new(domain_size).unwrap();
+
+        let mut dealer = Dealer::<E>::new(domain_size, 1<<5);
+        let (crs, _) = dealer.setup(&mut rng);
+
+        let mut f = vec![Fr::zero(); domain_size+1];
+        for i in 0..domain_size {
+            f[i] = Fr::rand(&mut rng);
+        }
+        let fpoly = DensePolynomial::from_coefficients_vec(f.clone());
+        let com = commit_g1::<E>(&crs.powers_of_g, &fpoly);
+        let pi = open_all_values::<E>(&crs.powers_of_g, &f, &domain);
+
+        // verify the kzg proof
+        let g = G1::generator();
+        let h = G2::generator();
+
+        for i in 0..domain_size {
+            let lhs = E::pairing(com - (g*fpoly.evaluate(&domain.element(i))), h);
+            let rhs = E::pairing(pi[i], crs.pk - (h*domain.element(i)));
+            assert_eq!(lhs, rhs);
+        }
+    }
 
     #[test]
     fn lagrange_test() {
@@ -104,7 +242,7 @@ mod tests {
         // almost_domain is {1, omega, ..., omega^(domain_size-1), tau}
         let tau = Fr::rand(&mut rng);
         let mut almost_domain: Vec<Fr> = domain.elements().collect();
-        almost_domain.resize(domain_size+1, tau);
+        almost_domain.resize(domain_size + 1, tau);
 
         let gamma = Fr::GENERATOR;
         let lag_coeffs = lagrange_coefficients(almost_domain, gamma);
@@ -117,13 +255,10 @@ mod tests {
         for i in 0..domain_size {
             fofgamma += lag_coeffs[i] * evals[i];
         }
-        fofgamma += lag_coeffs[domain_size]*foftau;
+        fofgamma += lag_coeffs[domain_size] * foftau;
 
         let f = DensePolynomial::from_coefficients_vec(interpolate_almostgood(
-            &evals,
-            &domain,
-            foftau,
-            tau,
+            &evals, &domain, foftau, tau,
         ));
 
         assert_eq!(f.evaluate(&gamma), fofgamma);

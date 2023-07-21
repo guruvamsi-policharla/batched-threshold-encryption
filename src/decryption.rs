@@ -7,7 +7,7 @@ use ark_std::{end_timer, start_timer, One, Zero};
 use crate::{
     dealer::CRS,
     encryption::Ciphertext,
-    utils::{hash_to_bytes, xor},
+    utils::{hash_to_bytes, xor, interpolate_almostgood},
 };
 
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
@@ -75,38 +75,17 @@ pub fn public_reconstruction<E: Pairing>(
 
     // fevals are on an 'almost' nice domain. so we first interpolate quotient polynomial
     // where the evaluations are determined as q(x) = (f(x) - f(gamma))/(x-gamma)
-    let mut qevals = vec![E::ScalarField::zero(); batch_size];
-    let mut den: Vec<E::ScalarField> = tx_domain.elements().collect();
-    den.iter_mut().for_each(|x| *x -= gamma);
-
-    // batch invert den
-    batch_inversion(&mut den);
-
-    for i in 0..batch_size {
-        qevals[i] = (fevals[i] - fofgamma) * den[i];
-    }
-
-    let q = tx_domain.ifft(&qevals);
-    // TODO: FIX BELOW THIS
-    let mut f = q.clone();
-    for i in 1..batch_size {
-        f[i] -= gamma * q[i - 1];
-    }
-
-    // use FK22 to get all the KZG proofs in O(nlog n) time
+    let f = interpolate_almostgood(&fevals, &tx_domain, fofgamma, gamma);
+    
+    // use FK22 to get all the KZG proofs in O(nlog n) time =======================
     let mut v = f.clone();
     v.reverse();
+    v.truncate(batch_size);
     v.resize(2 * batch_size, E::ScalarField::zero());
     let v = top_domain.fft(&v);
 
     // get all the roots of top_domain
-    let omega = top_domain.group_gen;
-    let mut top_domain_roots: Vec<E::ScalarField> = top_domain.elements().collect();
-
-    top_domain_roots[0] = E::ScalarField::one();
-    for i in 1..2 * batch_size {
-        top_domain_roots[i] = top_domain_roots[i - 1] * omega;
-    }
+    let top_domain_roots: Vec<E::ScalarField> = top_domain.elements().collect();
 
     // h = crs.powers_of_top_tau[i] ^ (v[i] . top_domain_roots[i])
     let mut h = vec![g; 2 * batch_size];
@@ -120,6 +99,7 @@ pub fn public_reconstruction<E: Pairing>(
 
     // fft on h to get KZG proofs
     let pi = tx_domain.fft(&h);
+    // pi.reverse();
 
     // now decrypt each of the ciphertexts as m = ct1 \xor H(e(pi, ct2))
     let mut m = vec![[0u8; 32]; batch_size];
