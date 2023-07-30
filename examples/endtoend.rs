@@ -41,7 +41,7 @@ fn main() {
         partial_decryptions.push(secret_key[i].partial_decrypt(&ct));
     }
 
-    let messages = decrypt_all(partial_decryptions, &ct, &crs);
+    let messages = decrypt_all(&partial_decryptions, &ct, &crs);
     for i in 0..batch_size {
         assert_eq!(msg, messages[i]);
     }

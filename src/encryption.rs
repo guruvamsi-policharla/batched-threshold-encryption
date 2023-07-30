@@ -3,17 +3,17 @@ use ark_ff::Field;
 use ark_serialize::*;
 use ark_std::{rand::RngCore, UniformRand};
 use merlin::Transcript;
-use retry::{delay::{Fixed, NoDelay}, retry};
+use retry::{delay::NoDelay, retry};
 
 use crate::utils::{hash_to_bytes, xor};
 
-#[derive(CanonicalSerialize, CanonicalDeserialize)]
+#[derive(CanonicalSerialize, CanonicalDeserialize, Clone)]
 pub struct DLogProof<E: Pairing> {
     pub u: E::G1,
     pub z: E::ScalarField,
 }
 
-#[derive(CanonicalSerialize, CanonicalDeserialize)]
+#[derive(CanonicalSerialize, CanonicalDeserialize, Clone)]
 pub struct Ciphertext<E: Pairing> {
     pub ct1: [u8; 32],
     pub ct2: E::G2,
@@ -174,13 +174,28 @@ mod tests {
 
         let ct = encrypt::<Bls12_381, _>(msg, x, com, pk, &mut rng);
 
-        println!(
-            "Estimated size of ciphertext: {} bytes",
-            mem::size_of::<Ciphertext<Bls12_381>>()
-        );
+        let mut ct_bytes = Vec::new();
+        ct.serialize_compressed(&mut ct_bytes).unwrap();
+        println!("Compressed ciphertext: {} bytes", ct_bytes.len());
 
         let mut ct_bytes = Vec::new();
         ct.serialize_uncompressed(&mut ct_bytes).unwrap();
-        println!("Actual size of ciphertext: {} bytes", ct_bytes.len())
+        println!("Uncompressed ciphertext: {} bytes", ct_bytes.len());
+
+        let mut g1_bytes = Vec::new();
+        let mut g2_bytes = Vec::new();
+        let mut fr_bytes = Vec::new();
+        
+        let g = G1::generator();
+        let h = G2::generator();
+        let x = tx_domain.group_gen;
+        
+        g.serialize_uncompressed(&mut g1_bytes).unwrap();
+        h.serialize_uncompressed(&mut g2_bytes).unwrap();
+        x.serialize_uncompressed(&mut fr_bytes).unwrap();
+
+        println!("G1 len: {} bytes", g1_bytes.len());
+        println!("G2 len: {} bytes", g2_bytes.len());
+        println!("Fr len: {} bytes", fr_bytes.len());
     }
 }

@@ -7,12 +7,16 @@ use ark_std::One;
 type E = Bls12_381;
 type Fr = <Bls12<ark_bls12_381::Config> as Pairing>::ScalarField;
 
+//todo: use seeded randomness
 fn bench_encrypt(c: &mut Criterion) {
     let mut rng = ark_std::test_rng();
     
     let n = 1 << 4;
     let mut group = c.benchmark_group("encrypt");
-    for size in 2..5 {
+    for size in 2..6 {
+        // timing doesn't change since ecryption is independent of batch_size
+        // done as a sanity check
+
         let batch_size = 1 << size;   
 
         let mut dealer = Dealer::<E>::new(batch_size, n);

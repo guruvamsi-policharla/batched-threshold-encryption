@@ -2,7 +2,7 @@ use ark_ec::pairing::Pairing;
 use ark_ff::{FftField, Field};
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 use ark_serialize::*;
-use ark_std::{Zero};
+use ark_std::Zero;
 
 use crate::{
     dealer::CRS,
@@ -48,7 +48,7 @@ impl<E: Pairing> SecretKey<E> {
 
 /// decrypts all the ciphertexts in a batch
 pub fn decrypt_all<E: Pairing>(
-    partial_decryptions: Vec<E::ScalarField>,
+    partial_decryptions: &Vec<E::ScalarField>,
     ct: &Vec<Ciphertext<E>>,
     crs: &CRS<E>,
 ) -> Vec<[u8; 32]> {

@@ -24,5 +24,13 @@ asm = [ "ark-ff/asm" ]
 name = "encryption"
 harness = false
 
+[[bench]]
+name = "partial_decryption"
+harness = false
+
+[[bench]]
+name = "decrypt_all"
+harness = false
+
 [profile.dev]
 opt-level = 3

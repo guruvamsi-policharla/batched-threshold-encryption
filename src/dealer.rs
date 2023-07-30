@@ -4,13 +4,16 @@ use ark_ff::{FftField, PrimeField};
 use ark_poly::{domain::EvaluationDomain, Radix2EvaluationDomain};
 use ark_std::{rand::RngCore, One, UniformRand, Zero};
 use std::{iter, marker::PhantomData, vec};
+use ark_serialize::*;
 
+#[derive(CanonicalSerialize, CanonicalDeserialize, Clone)]
 pub struct CRS<E: Pairing> {
     pub powers_of_g: Vec<E::G1>,
     pub pk: E::G2,
 
     pub y: Vec<E::G1>,
 }
+#[derive(CanonicalSerialize, CanonicalDeserialize, Clone)]
 pub struct Dealer<E: Pairing> {
     batch_size: usize,
     n: usize,
