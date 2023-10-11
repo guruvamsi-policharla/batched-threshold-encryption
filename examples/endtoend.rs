@@ -19,7 +19,7 @@ fn main() {
 
     let mut dealer = Dealer::<E>::new(batch_size, n);
     let (crs, lag_shares) = dealer.setup(&mut rng);
-    let (gtilde, htilde, com, alpha_shares, r_shares) = dealer.epoch_setup(&mut rng);
+    let (_gtilde, htilde, com, alpha_shares, r_shares) = dealer.epoch_setup(&mut rng);
 
     let mut secret_key: Vec<SecretKey<E>> = Vec::new();
     for i in 0..n {

@@ -1,11 +1,12 @@
 use ark_bls12_381::Bls12_381;
-use ark_ec::{bls12::Bls12, pairing::Pairing};
+use ark_ec::pairing::Pairing;
 use ark_poly::{Radix2EvaluationDomain, EvaluationDomain};
 use batch_threshold::{dealer::Dealer, decryption::{SecretKey, decrypt_all}, encryption::{encrypt, Ciphertext}};
 use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId};
 
 type E = Bls12_381;
-type Fr = <Bls12<ark_bls12_381::Config> as Pairing>::ScalarField;
+type Fr = <E as Pairing>::ScalarField;
+type G1 = <E as Pairing>::G1;
 
 //todo: use seeded randomness
 fn bench_decrypt_all(c: &mut Criterion) {
@@ -18,11 +19,11 @@ fn bench_decrypt_all(c: &mut Criterion) {
 
         let mut dealer = Dealer::<E>::new(batch_size, n);
         let (crs, lag_shares) = dealer.setup(&mut rng);
-        let (com, epoch_shares) = dealer.epoch_setup(&mut rng);
+        let (_gtilde, htilde, com, alpha_shares, r_shares) = dealer.epoch_setup(&mut rng);
 
         let mut secret_key: Vec<SecretKey<E>> = Vec::new();
         for i in 0..n {
-            secret_key.push(SecretKey::new(lag_shares[i].clone(), epoch_shares[i]));
+            secret_key.push(SecretKey::new(lag_shares[i].clone(), alpha_shares[i], r_shares[i]));
         }
 
         let msg = [1u8; 32];
@@ -32,18 +33,21 @@ fn bench_decrypt_all(c: &mut Criterion) {
         // generate ciphertexts for all points in tx_domain
         let mut ct: Vec<Ciphertext<E>> = Vec::new();
         for x in tx_domain.elements() {
-            ct.push(encrypt::<E, _>(msg, x, com, crs.pk, &mut rng));
+            ct.push(encrypt::<E, _>(msg, x, com, htilde, crs.pk, &mut rng));
         }
 
         // generate partial decryptions
-        let mut partial_decryptions: Vec<Fr> = Vec::new();
+        let mut partial_decryptions1: Vec<Fr> = Vec::new();
+        let mut partial_decryptions2: Vec<G1> = Vec::new();
         for i in 0..n {
-            partial_decryptions.push(secret_key[i].partial_decrypt(&ct));
+            let partial_decryption = secret_key[i].partial_decrypt(&ct);
+            partial_decryptions1.push(partial_decryption.0);
+            partial_decryptions2.push(partial_decryption.1);
         }
         
         // bench full decryption
-        group.bench_with_input(BenchmarkId::from_parameter(batch_size), &(partial_decryptions, ct, crs), |b, inp| {
-            b.iter(|| decrypt_all(&inp.0, &inp.1, &inp.2));
+        group.bench_with_input(BenchmarkId::from_parameter(batch_size), &(partial_decryptions1, partial_decryptions2, ct, crs), |b, inp| {
+            b.iter(|| decrypt_all(&inp.0, &inp.1, &inp.2, &inp.3));
         });
     }
     group.finish();

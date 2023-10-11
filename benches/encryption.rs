@@ -1,11 +1,11 @@
 use ark_bls12_381::Bls12_381;
-use ark_ec::{bls12::Bls12, pairing::Pairing};
+use ark_ec::pairing::Pairing;
 use batch_threshold::{dealer::Dealer, decryption::SecretKey, encryption::encrypt};
 use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId};
 use ark_std::One;
 
 type E = Bls12_381;
-type Fr = <Bls12<ark_bls12_381::Config> as Pairing>::ScalarField;
+type Fr = <E as Pairing>::ScalarField;
 
 //todo: use seeded randomness
 fn bench_encrypt(c: &mut Criterion) {
@@ -21,17 +21,17 @@ fn bench_encrypt(c: &mut Criterion) {
 
         let mut dealer = Dealer::<E>::new(batch_size, n);
         let (crs, lag_shares) = dealer.setup(&mut rng);
-        let (com, epoch_shares) = dealer.epoch_setup(&mut rng);
+        let (_gtilde, htilde, com, alpha_shares, r_shares) = dealer.epoch_setup(&mut rng);
 
         let mut secret_key: Vec<SecretKey<E>> = Vec::new();
         for i in 0..n {
-            secret_key.push(SecretKey::new(lag_shares[i].clone(), epoch_shares[i]));
+            secret_key.push(SecretKey::new(lag_shares[i].clone(), alpha_shares[i], r_shares[i]));
         }
 
         let msg = [1u8; 32];
 
         group.bench_with_input(BenchmarkId::from_parameter(batch_size), &(msg, com, crs.pk), |b, &inp| {
-            b.iter(|| encrypt::<E, _>(inp.0, Fr::one(), inp.1, inp.2, &mut rng));
+            b.iter(|| encrypt::<E, _>(inp.0, Fr::one(), inp.1, htilde, inp.2, &mut rng));
         });
     }
     group.finish();

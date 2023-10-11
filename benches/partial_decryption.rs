@@ -1,11 +1,11 @@
 use ark_bls12_381::Bls12_381;
-use ark_ec::{bls12::Bls12, pairing::Pairing};
+use ark_ec::pairing::Pairing;
 use ark_poly::{Radix2EvaluationDomain, EvaluationDomain};
 use batch_threshold::{dealer::Dealer, decryption::SecretKey, encryption::{encrypt, Ciphertext}};
 use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId};
 
 type E = Bls12_381;
-type Fr = <Bls12<ark_bls12_381::Config> as Pairing>::ScalarField;
+type Fr = <E as Pairing>::ScalarField;
 
 //todo: use seeded randomness
 fn bench_partial_decrypt(c: &mut Criterion) {
@@ -18,11 +18,11 @@ fn bench_partial_decrypt(c: &mut Criterion) {
 
         let mut dealer = Dealer::<E>::new(batch_size, n);
         let (crs, lag_shares) = dealer.setup(&mut rng);
-        let (com, epoch_shares) = dealer.epoch_setup(&mut rng);
+        let (_gtilde, htilde, com, alpha_shares, r_shares) = dealer.epoch_setup(&mut rng);
 
         let mut secret_key: Vec<SecretKey<E>> = Vec::new();
         for i in 0..n {
-            secret_key.push(SecretKey::new(lag_shares[i].clone(), epoch_shares[i]));
+            secret_key.push(SecretKey::new(lag_shares[i].clone(), alpha_shares[i], r_shares[i]));
         }
 
         let msg = [1u8; 32];
@@ -32,7 +32,7 @@ fn bench_partial_decrypt(c: &mut Criterion) {
         // generate ciphertexts for all points in tx_domain
         let mut ct: Vec<Ciphertext<E>> = Vec::new();
         for x in tx_domain.elements() {
-            ct.push(encrypt::<E, _>(msg, x, com, crs.pk, &mut rng));
+            ct.push(encrypt::<E, _>(msg, x, com, htilde, crs.pk, &mut rng));
         }
 
         // bench partial decryption
