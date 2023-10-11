@@ -119,24 +119,38 @@ where
         (crs, transpose(lag_shares))
     }
 
-    pub fn epoch_setup<R: RngCore>(&mut self, rng: &mut R) -> (E::G1, Vec<E::ScalarField>) {
-        // secret share alpha*long_term_secret for a random alpha
-        // publish com = g^alpha
+    pub fn epoch_setup<R: RngCore>(&mut self, rng: &mut R) -> (E::G1, E::G2, E::G1, Vec<E::ScalarField>, Vec<E::ScalarField>) {
+        // Generators
+        let g = E::G1::generator();
+        let h = E::G2::generator();
 
+        // sample gtilde and htilde such that dlog_g(gtilde) = dlog_h(htilde)
+        // publish gtilde and htilde
+        let delta = E::ScalarField::rand(rng);
+        let gtilde = g * delta;
+        let htilde = h * delta;
+
+        // secret share alpha*long_term_secret, r for a random alpha and r
+        // publish com = g^alpha . gtilde^r
         let alpha = E::ScalarField::rand(rng);
-        let com = E::G1::generator() * alpha;
+        let r = E::ScalarField::rand(rng);
+        let com = (g * alpha) + (gtilde * r);
 
-        let mut coeffs = vec![E::ScalarField::zero(); self.n];
-        coeffs[0] = alpha * self.long_term_secret;
+        let mut alpha_coeffs = vec![E::ScalarField::zero(); self.n];
+        let mut r_coeffs = vec![E::ScalarField::zero(); self.n];
+        alpha_coeffs[0] = alpha * self.long_term_secret;
+        r_coeffs[0] = r;
         for j in 1..self.n/2 {
-            coeffs[j] = E::ScalarField::rand(rng);
+            alpha_coeffs[j] = E::ScalarField::rand(rng);
+            r_coeffs[j] = E::ScalarField::rand(rng);
         }
 
         // use fft to compute shares
         let share_domain = Radix2EvaluationDomain::<E::ScalarField>::new(self.n).unwrap();
-        let evals = share_domain.fft(&coeffs);
+        let alpha_shares = share_domain.fft(&alpha_coeffs);
+        let r_shares = share_domain.fft(&r_coeffs);
 
-        (com, evals)
+        (gtilde, htilde, com, alpha_shares, r_shares)
     }
 }
 
@@ -144,6 +158,9 @@ where
 mod tests {
     use super::*;
     use ark_bls12_381::Bls12_381;
+    type E = Bls12_381;
+    type G1 = <E as Pairing>::G1;
+    type G2 = <E as Pairing>::G2;
 
     #[test]
     fn test_dealer() {
@@ -151,14 +168,16 @@ mod tests {
         let batch_size = 1 << 5;
         let n = 1 << 4;
 
-        let mut dealer = Dealer::<Bls12_381>::new(batch_size, n);
+        let mut dealer = Dealer::<E>::new(batch_size, n);
         let (crs, lag_shares) = dealer.setup(&mut rng);
 
-        let (_com, evals) = dealer.epoch_setup(&mut rng);
+        let (gtilde, htilde, _com, ashares, rshares) = dealer.epoch_setup(&mut rng);
 
+        assert_eq!(E::pairing(gtilde, G2::generator()), E::pairing(G1::generator(), htilde));
         assert_eq!(lag_shares.len(), n);
         assert_eq!(lag_shares[0].len(), batch_size);
         assert_eq!(crs.powers_of_g.len(), batch_size + 1);
-        assert_eq!(evals.len(), n);
+        assert_eq!(ashares.len(), n);
+        assert_eq!(rshares.len(), n);
     }
 }
