@@ -5,12 +5,13 @@ use ark_std::{rand::RngCore, UniformRand};
 use merlin::Transcript;
 use retry::{delay::NoDelay, retry};
 
-use crate::utils::{hash_to_bytes, xor};
+use crate::{utils::{hash_to_bytes, xor}, dealer::CRS};
 
 #[derive(CanonicalSerialize, CanonicalDeserialize, Clone)]
 pub struct DLogProof<E: Pairing> {
-    pub u: E::G1,
-    pub z: E::ScalarField,
+    pub c: E::ScalarField, //challenge
+    pub z1: E::ScalarField, //opening for g^s
+    pub z2: E::ScalarField, //opening for htilde^{rho}
 }
 
 #[derive(CanonicalSerialize, CanonicalDeserialize, Clone)]
@@ -24,9 +25,13 @@ pub struct Ciphertext<E: Pairing> {
 }
 
 impl<E: Pairing> Ciphertext<E> {
-    pub fn verify(&self) -> bool {
+    /// panicks if ciphertext does not verify
+    pub fn verify(&self, gtilde: E::G1, htilde: E::G2, crs: &CRS<E>) {
         let g = E::G1::generator();
 
+        let u = g * self.pi.z1 - self.gs * self.pi.c;
+        let v = htilde * self.pi.z2 - self.ct3 * self.pi.c;
+        
         let mut ts: Transcript = Transcript::new(&[0u8]);
         ts.append_message(&[1u8], &self.ct1);
 
@@ -47,17 +52,27 @@ impl<E: Pairing> Ciphertext<E> {
         ts.append_message(&[5u8], &x_bytes);
 
         let mut u_bytes = Vec::new();
-        self.pi.u.serialize_uncompressed(&mut u_bytes).unwrap();
+        u.serialize_uncompressed(&mut u_bytes).unwrap();
         ts.append_message(&[6u8], &u_bytes);
-
-        let mut c_bytes = Vec::new();
-        ts.challenge_bytes(&[7u8], &mut c_bytes);
+        
+        let mut v_bytes = Vec::new();
+        v.serialize_uncompressed(&mut v_bytes).unwrap();
+        ts.append_message(&[7u8], &v_bytes);
+        
+        // Fiat-Shamir to get challenge
+        let mut c_bytes = [0u8;32];
+        ts.challenge_bytes(&[8u8], &mut c_bytes);
         let c = E::ScalarField::from_random_bytes(&c_bytes).unwrap();
 
-        let lhs = g * self.pi.z;
-        let rhs = self.pi.u + (self.gs * c);
+        // assert that the recomputed challenge matches
+        assert_eq!(self.pi.c, c);
 
-        lhs == rhs
+        // pairing check
+        let gtaux = crs.powers_of_g[1] - (g*self.x);
+        assert_eq!(
+            E::pairing(gtilde, self.ct2),
+            E::pairing(gtaux, self.ct3)
+        );        
     }
 }
 
@@ -66,7 +81,7 @@ pub fn encrypt<E: Pairing, R: RngCore>(
     x: E::ScalarField,
     com: E::G1,
     htilde: E::G2,
-    pk: E::G2,
+    htau: E::G2,
     rng: &mut R,
 ) -> Ciphertext<E> {
     let g = E::G1::generator();
@@ -101,7 +116,7 @@ pub fn encrypt<E: Pairing, R: RngCore>(
 
     // xor msg and hmask
     let ct1: [u8; 32] = xor(&msg, &hmask).as_slice().try_into().unwrap();
-    let ct2 = (pk - (h * x)) * rho;
+    let ct2 = (htau - (h * x)) * rho;
     let ct3 = htilde * rho;
 
     // Prove knowledge of discrete log of S with ct1, ct2, S, x as tags
@@ -124,23 +139,32 @@ pub fn encrypt<E: Pairing, R: RngCore>(
     x.serialize_uncompressed(&mut x_bytes).unwrap();
     ts.append_message(&[5u8], &x_bytes);
 
-    let r = E::ScalarField::rand(rng);
-    let u = g * r;
+    let r1 = E::ScalarField::rand(rng);
+    let r2 = E::ScalarField::rand(rng);
+    let u = g * r1;
+    let v = htilde * r2;
+    
     let mut u_bytes = Vec::new();
     u.serialize_uncompressed(&mut u_bytes).unwrap();
     ts.append_message(&[6u8], &u_bytes);
 
+    let mut v_bytes = Vec::new();
+    v.serialize_uncompressed(&mut v_bytes).unwrap();
+    ts.append_message(&[7u8], &v_bytes);
+
     // Fiat-Shamir to get challenge
-    let mut c_bytes = Vec::new();
-    ts.challenge_bytes(&[7u8], &mut c_bytes);
+    let mut c_bytes = [0u8;32];
+    ts.challenge_bytes(&[8u8], &mut c_bytes);
     let c = E::ScalarField::from_random_bytes(&c_bytes).unwrap();
 
     // compute response
-    let z = r + c * s;
+    let z1 = r1 + c * s;
+    let z2 = r2 + c * rho;
 
-    debug_assert_eq!(g * z, u + gs * c);
+    debug_assert_eq!(g * z1, u + gs * c);
+    debug_assert_eq!(htilde * z2, v + ct3 * c);
 
-    let pi = DLogProof { u, z };
+    let pi = DLogProof { c, z1, z2 };
 
     Ciphertext {
         ct1,
@@ -175,12 +199,12 @@ mod tests {
 
         let mut dealer = Dealer::<E>::new(batch_size, 1 << 4);
         let (crs, _) = dealer.setup(&mut rng);
-        let (_, htilde, com, _, _) = dealer.epoch_setup(&mut rng);
+        let (gtilde, htilde, com, _, _) = dealer.epoch_setup(&mut rng);
 
         let msg = [1u8; 32];
         let x = tx_domain.group_gen;
 
-        let ct = encrypt::<Bls12_381, _>(msg, x, com, htilde, crs.pk, &mut rng);
+        let ct = encrypt::<Bls12_381, _>(msg, x, com, htilde, crs.htau, &mut rng);
 
         let mut ct_bytes = Vec::new();
         ct.serialize_compressed(&mut ct_bytes).unwrap();
@@ -198,12 +222,14 @@ mod tests {
         let h = G2::generator();
         let x = tx_domain.group_gen;
         
-        g.serialize_uncompressed(&mut g1_bytes).unwrap();
-        h.serialize_uncompressed(&mut g2_bytes).unwrap();
-        x.serialize_uncompressed(&mut fr_bytes).unwrap();
+        g.serialize_compressed(&mut g1_bytes).unwrap();
+        h.serialize_compressed(&mut g2_bytes).unwrap();
+        x.serialize_compressed(&mut fr_bytes).unwrap();
 
         println!("G1 len: {} bytes", g1_bytes.len());
         println!("G2 len: {} bytes", g2_bytes.len());
         println!("Fr len: {} bytes", fr_bytes.len());
+
+        ct.verify(gtilde, htilde, &crs);
     }
 }

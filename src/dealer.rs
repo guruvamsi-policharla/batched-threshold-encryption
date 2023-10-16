@@ -9,7 +9,7 @@ use ark_serialize::*;
 #[derive(CanonicalSerialize, CanonicalDeserialize, Clone)]
 pub struct CRS<E: Pairing> {
     pub powers_of_g: Vec<E::G1>,
-    pub pk: E::G2,
+    pub htau: E::G2,
 
     pub y: Vec<E::G1>,
 }
@@ -109,10 +109,10 @@ where
             let evals = share_domain.fft(&coeffs);
             lag_shares.push(evals);
         }
-
+        
         let crs = CRS::<E> {
             powers_of_g,
-            pk: h * tau,
+            htau: h * tau,
             y,
         };
 

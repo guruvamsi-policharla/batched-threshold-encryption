@@ -19,7 +19,7 @@ fn main() {
 
     let mut dealer = Dealer::<E>::new(batch_size, n);
     let (crs, lag_shares) = dealer.setup(&mut rng);
-    let (_gtilde, htilde, com, alpha_shares, r_shares) = dealer.epoch_setup(&mut rng);
+    let (gtilde, htilde, com, alpha_shares, r_shares) = dealer.epoch_setup(&mut rng);
 
     let mut secret_key: Vec<SecretKey<E>> = Vec::new();
     for i in 0..n {
@@ -33,14 +33,14 @@ fn main() {
     // generate ciphertexts for all points in tx_domain
     let mut ct: Vec<Ciphertext<E>> = Vec::new();
     for x in tx_domain.elements() {
-        ct.push(encrypt::<E, _>(msg, x, com, htilde, crs.pk, &mut rng));
+        ct.push(encrypt::<E, _>(msg, x, com, htilde, crs.htau, &mut rng));
     }
 
     // generate partial decryptions
     let mut partial_decryptions1: Vec<Fr> = Vec::new();
     let mut partial_decryptions2: Vec<G1> = Vec::new();
     for i in 0..n {
-        let partial_decryption = secret_key[i].partial_decrypt(&ct);
+        let partial_decryption = secret_key[i].partial_decrypt(&ct, gtilde, htilde, &crs);
         partial_decryptions1.push(partial_decryption.0);
         partial_decryptions2.push(partial_decryption.1);
     }

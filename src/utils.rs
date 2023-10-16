@@ -210,7 +210,7 @@ mod tests {
 
         for i in 0..domain_size {
             let lhs = E::pairing(com - (g * fpoly.evaluate(&domain.element(i))), h);
-            let rhs = E::pairing(pi[i], crs.pk - (h * domain.element(i)));
+            let rhs = E::pairing(pi[i], crs.htau - (h * domain.element(i)));
             assert_eq!(lhs, rhs);
         }
     }

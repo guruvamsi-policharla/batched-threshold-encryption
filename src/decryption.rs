@@ -27,14 +27,14 @@ impl<E: Pairing> SecretKey<E> {
     }
 
     /// each party in the committee computes a partial decryption
-    pub fn partial_decrypt(&self, ct: &Vec<Ciphertext<E>>) -> (E::ScalarField, E::G1) {
+    pub fn partial_decrypt(&self, ct: &Vec<Ciphertext<E>>, gtilde: E::G1, htilde: E::G2, crs: &CRS<E>) -> (E::ScalarField, E::G1) {
 
         let mut partial_decryption1 = self.alpha_share;
         let batch_size = self.lag_share.len();
 
         // Check that all ciphertexts are valid
         for i in 0..batch_size {
-            assert!(ct[i].verify());
+            ct[i].verify(gtilde, htilde, crs);
         }
 
         // compute partial decryption
