@@ -60,7 +60,7 @@ impl<E: Pairing> Ciphertext<E> {
         ts.append_message(&[7u8], &v_bytes);
         
         // Fiat-Shamir to get challenge
-        let mut c_bytes = [0u8;32];
+        let mut c_bytes = [0u8;31];
         ts.challenge_bytes(&[8u8], &mut c_bytes);
         let c = E::ScalarField::from_random_bytes(&c_bytes).unwrap();
 
@@ -153,7 +153,10 @@ pub fn encrypt<E: Pairing, R: RngCore>(
     ts.append_message(&[7u8], &v_bytes);
 
     // Fiat-Shamir to get challenge
-    let mut c_bytes = [0u8;32];
+    // note we sample a 31-byte field element to avoid rejection sampling. 
+    // this is secure because the challenge only affects soundness, not zk.
+    // the probability of a bad challenge is upperbounded by 1/2^{31*8}
+    let mut c_bytes = [0u8;31];
     ts.challenge_bytes(&[8u8], &mut c_bytes);
     let c = E::ScalarField::from_random_bytes(&c_bytes).unwrap();
 
