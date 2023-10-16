@@ -30,7 +30,7 @@ fn bench_encrypt(c: &mut Criterion) {
 
         let msg = [1u8; 32];
 
-        group.bench_with_input(BenchmarkId::from_parameter(batch_size), &(msg, com, crs.pk), |b, &inp| {
+        group.bench_with_input(BenchmarkId::from_parameter(batch_size), &(msg, com, crs.htau), |b, &inp| {
             b.iter(|| encrypt::<E, _>(inp.0, Fr::one(), inp.1, htilde, inp.2, &mut rng));
         });
     }

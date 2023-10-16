@@ -2,7 +2,7 @@
 
 Rust implementation of the batched-threshold encryption introduced in [ePrint:2023/XXX](https://eprint.iacr.org/2023/XXX).
 
-Use ```cargo bench``` to benchmark `encrypt`, `partial_decrypt` and `decrypt_all`. Note that the benchmarks are run on a single thread and benchmarking `partial_decrypt` may take up to half an hour. This can be sped up by either under sampling or reducing the size maximum batch size.
+Use ```cargo bench``` to benchmark `encrypt`, `partial_decrypt` and `decrypt_all`.
 
 Use ```cargo run --example endtoend``` to check correctness of the implementation.
 

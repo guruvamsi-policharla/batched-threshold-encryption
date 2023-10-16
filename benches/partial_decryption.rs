@@ -13,12 +13,14 @@ fn bench_partial_decrypt(c: &mut Criterion) {
     
     let n = 1 << 4;
     let mut group = c.benchmark_group("partial_decrypt");
+    group.sample_size(20);
+    
     for size in 2..=10 {
         let batch_size = 1 << size;   
 
         let mut dealer = Dealer::<E>::new(batch_size, n);
         let (crs, lag_shares) = dealer.setup(&mut rng);
-        let (_gtilde, htilde, com, alpha_shares, r_shares) = dealer.epoch_setup(&mut rng);
+        let (gtilde, htilde, com, alpha_shares, r_shares) = dealer.epoch_setup(&mut rng);
 
         let mut secret_key: Vec<SecretKey<E>> = Vec::new();
         for i in 0..n {
@@ -32,12 +34,12 @@ fn bench_partial_decrypt(c: &mut Criterion) {
         // generate ciphertexts for all points in tx_domain
         let mut ct: Vec<Ciphertext<E>> = Vec::new();
         for x in tx_domain.elements() {
-            ct.push(encrypt::<E, _>(msg, x, com, htilde, crs.pk, &mut rng));
+            ct.push(encrypt::<E, _>(msg, x, com, htilde, crs.htau, &mut rng));
         }
 
         // bench partial decryption
         group.bench_with_input(BenchmarkId::from_parameter(batch_size), &ct, |b, ct| {
-            b.iter(|| secret_key[0].partial_decrypt(ct));
+            b.iter(|| secret_key[0].partial_decrypt(&ct, gtilde, htilde, &crs));
         });
     }
     group.finish();
