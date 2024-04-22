@@ -142,15 +142,11 @@ pub fn open_all_values<E: Pairing>(
     let top_domain = Radix2EvaluationDomain::<E::ScalarField>::new(2 * domain.size()).unwrap();
 
     // use FK22 to get all the KZG proofs in O(nlog n) time =======================
-    // if f = {f0 ,f1, ..., fd}
-    // v = {fd, (d-1 0s), fd, f, f1, ..., fd-2}
-    let f = f[1..f.len()].to_vec();
-    let mut v = vec![f[f.len() - 1]];
-    v.resize(domain.size(), E::ScalarField::zero());
-    v.push(f[f.len() - 1]);
-    for &e in f.iter().take(f.len() - 1) {
-        v.push(e);
-    }
+    // f = {f0 ,f1, ..., fd}
+    // v = {(d 0s), f1, ..., fd}
+    let mut v = vec![E::ScalarField::zero(); domain.size() + 1];
+    v.append(&mut f[1..f.len()].to_vec());
+
     debug_assert_eq!(v.len(), 2 * domain.size());
     let v = top_domain.fft(&v);
 
@@ -196,10 +192,11 @@ mod tests {
         let mut dealer = Dealer::<E>::new(domain_size, 1 << 5);
         let (crs, _) = dealer.setup(&mut rng);
 
-        let mut f = vec![Fr::zero(); domain_size + 1];
+        let mut f = vec![Fr::zero(); domain_size];
         for i in 0..domain_size {
             f[i] = Fr::rand(&mut rng);
         }
+
         let fpoly = DensePolynomial::from_coefficients_vec(f.clone());
         let com = commit_g1::<E>(&crs.powers_of_g, &fpoly);
         let pi = open_all_values::<E>(&crs.y, &f, &domain);
