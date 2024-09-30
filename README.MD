@@ -1,4 +1,5 @@
 # Batched Threshold Encryption [ePrint:2024/669](https://eprint.iacr.org/2024/669)
+## UPDATE: For virtually all applications, the [improved batched-threshold encryption scheme](https://github.com/guruvamsi-policharla/batched-threshold-pp) should be preferred.
 
 Rust implementation of the batched-threshold encryption introduced in [ePrint:2024/669](https://eprint.iacr.org/2024/669).
 
